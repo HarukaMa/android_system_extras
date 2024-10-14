@@ -24,13 +24,15 @@ use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::fs::{read_dir, remove_file};
 use std::path::Path;
+use std::process::Command;
 use std::str::FromStr;
 use std::time::Duration;
 
 const PROFCOLLECT_CONFIG_NAMESPACE: &str = "profcollect_native_boot";
 const PROFCOLLECT_NODE_ID_PROPERTY: &str = "persist.profcollectd.node_id";
 
-const DEFAULT_BINARY_FILTER: &str = "^/(system|apex/.+)/(bin|lib|lib64)/.+";
+const DEFAULT_BINARY_FILTER: &str =
+    "(^/(system|apex/.+|vendor)/(bin|lib|lib64)/.+)|kernel.kallsyms";
 pub const REPORT_RETENTION_SECS: u64 = 14 * 24 * 60 * 60; // 14 days.
 
 // Static configs that cannot be changed.
@@ -62,6 +64,8 @@ pub struct Config {
     pub binary_filter: String,
     /// Maximum size of the trace directory.
     pub max_trace_limit: u64,
+    /// The kernel release version
+    pub kernel_release: String,
 }
 
 impl Config {
@@ -80,6 +84,7 @@ impl Config {
                 "max_trace_limit",
                 /* 512MB */ 512 * 1024 * 1024,
             )?,
+            kernel_release: get_kernel_release(),
         })
     }
 }
@@ -144,6 +149,15 @@ fn generate_random_node_id() -> MacAddr6 {
     let mut node_id = rand::thread_rng().gen::<[u8; 6]>();
     node_id[0] |= 0x1;
     MacAddr6::from(node_id)
+}
+
+fn get_kernel_release() -> String {
+    match Command::new("uname").args(["-r"]).output() {
+        Ok(output) if output.status.success() => {
+            String::from_utf8_lossy(&output.stdout).trim().to_string()
+        }
+        _ => String::new(),
+    }
 }
 
 pub fn clear_data() -> Result<()> {
